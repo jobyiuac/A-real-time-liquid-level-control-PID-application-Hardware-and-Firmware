@@ -1,0 +1,78 @@
+#include "mbed.h"
+#include "EthernetNetIf.h"
+#include "HTTPServer.h"
+#include "SerialRPCInterface.h"
+
+// LR 2/2/17
+// sur ce fichier j'ai rajouté une variable RPC count que je peux lire à distance
+// adresse/rpc/count/read/
+
+DigitalOut led1(LED1, "led1");
+DigitalOut led2(LED2, "led2");
+DigitalOut led3(LED3, "led3");
+DigitalOut led4(LED4, "led4");
+AnalogIn Pot1(p19, "pot1");
+
+int count = 0 ;
+int nombre = 1 ;
+
+RPCVariable<int> rpc_count(&count, "count");
+RPCVariable<int> rpc_nombre(&nombre, "nombre");
+
+LocalFileSystem fs("webfs");
+
+EthernetNetIf eth;  
+HTTPServer svr;
+
+int main() {
+  Base::add_rpc_class<DigitalOut>();
+
+  printf("Setting up...\n");
+  
+  // modif LR config IP manuelle sinon dhcp !
+  EthernetNetIf eth( IpAddr(192,168,1,102), // IP
+                     IpAddr(255,255,255,0), // Subnet mask
+                     IpAddr(192,168,1,1),   // Gateway
+                     IpAddr(192,168,1,1) ); // DNS
+                     
+                     
+  EthernetErr ethErr = eth.setup();
+  if(ethErr)
+  {
+    printf("Error %d in setup.\n", ethErr);
+    return -1;
+  }
+  printf("Setup OK\n");
+  // on définit où seront stockés les fichiers !
+  FSHandler::mount("/webfs", "/files"); //Mount /webfs path on /files web path
+  FSHandler::mount("/webfs", "/"); //Mount /webfs path on web root path
+  
+  svr.addHandler<SimpleHandler>("/hello"); // http://a.b.c.d/hello : hello world !
+  svr.addHandler<RPCHandler>("/rpc");
+  svr.addHandler<FSHandler>("/files");
+  svr.addHandler<FSHandler>("/"); //Default handler
+  //Example : Access to mbed.htm : http://a.b.c.d/mbed.htm or http://a.b.c.d/files/mbed.htm
+  
+  svr.bind(80);
+  
+  printf("Listening...\n");
+    
+  Timer tm;
+  tm.start();
+  //Listen indefinitely
+  while(true)
+  {
+    Net::poll();
+    // demi periode = 0.5*1/f 
+    if(tm.read()>(0.5/nombre))
+    {
+      led1=!led1; //Show that we are alive
+      count ++ ;
+      tm.start();
+    }
+  }
+  
+  return 0;
+
+}
+// http://192.168.1.102/rpc/pot1/read dans le navigateur permet de lire l'état du potard !
